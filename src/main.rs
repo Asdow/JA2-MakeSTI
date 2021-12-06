@@ -32,8 +32,8 @@ fn main() {
         }
         else
         {
-            convertOutputToExtractForProps(&animations, &props[choice-1], &conf);
-            createSTIfiles();
+            // convertOutputToExtractForProps(&animations, &props[choice-1], &conf);
+            createSTIfiles(&animations, &props[choice-1], &conf);
         }
     }
 
@@ -246,7 +246,7 @@ fn readAnimationDataFromFile(filename: &String) -> Vec<Animation>
             
             let name = v[0].trim_matches('"').to_string();
             let endFrame: u32 = v[1].parse().unwrap();
-            let stiName = v[2].to_string();
+            let stiName = v[2].trim_matches('"').to_string();
             let nDirections: u32 = v[3].parse().unwrap();
             
             let anim = Animation{ name, endFrame, stiName, nDirections };
@@ -274,15 +274,6 @@ fn displayAnimationChoice(animations: &[String]) -> usize
     return decision(i);
 }
 
-fn createInputsForSTIcom(animations: Vec<Animation>)
-{
-
-}
-
-fn convertFramesToHexa()
-{
-
-}
 
 fn convertOutputToExtractForProps(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIconfig)
 {
@@ -326,8 +317,8 @@ fn convertOutputToExtractForProps(animations: &Vec<Animation>, propfile: &PropFi
 
                 // Crop and convert rendered images to use correct header type 
                 process::Command::new("make_script\\convert.exe")
-                .args( &convertArgs)
-                .output().expect("failed to execute convert.exe");
+                    .args( &convertArgs)
+                    .output().expect("failed to execute convert.exe");
             }
             else
             {
@@ -335,20 +326,83 @@ fn convertOutputToExtractForProps(animations: &Vec<Animation>, propfile: &PropFi
                     &inputDir, 
                     "-crop", &conf.CROPSETTINGS, 
                     &("BMP3:".to_string() + &outputDir + "\\0.bmp") 
-                    ];
+                ];
                 
                 process::Command::new("make_script\\convert.exe")
-                .args( &convertArgs)
-                .output().expect("failed to execute convert.exe");
+                    .args( &convertArgs)
+                    .output().expect("failed to execute convert.exe");
             }
         }
     }
 }
 
-fn createSTIfiles()
+fn createSTIfiles(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIconfig)
 {
 
+    for anim in animations
+    {
+        for prop in &propfile.props
+        {
+            // Construct path to .sti file
+            let mut outputFile = "\"".to_string() + &conf.OUTPUTDIR;
+            outputFile.push_str(&anim.stiName);
+            outputFile.push_str(&prop.suffix);
+            outputFile.push_str(".sti\"");
+            // Construct path to .bmp image files
+            let mut inputFile = String::from("\"make_script\\extract\\");
+            inputFile.push_str(&anim.name);
+            inputFile.push_str("\\Prop");
+            inputFile.push_str(&prop.number.to_string());
+            inputFile.push_str("\\0-%d.bmp\"");
+            
+            // Construct path to palette file
+            let mut palette = String::from("\"make_script\\Palettes\\");
+            palette.push_str(&prop.palette);
+            palette.push_str("\"");
+            // Calculate frame range and keyframes
+            let mut frameRange = String::from("\"0-"); 
+            frameRange.push_str( &(anim.endFrame * &anim.nDirections - 1).to_string());
+            frameRange.push_str("\"");
+
+            let mut keyframes = format!("\"{:#X}", &anim.endFrame);
+            for _i in 1..anim.endFrame
+            {
+                keyframes.push_str(" 0x0");
+            }
+            keyframes.push_str("\"");
+
+            let offset = format!("\"{}\"", &conf.OFFSET);
+            // Call sticom with the arguments and create the sti file
+            // println!("Calling sticom.exe with arguments");
+            // println!("-o {}", &outputFile);
+            // println!("-i {}", &inputFile);
+            // println!("-r {}", &frameRange);
+            // println!("-p {}", &palette);
+            // println!("-offset {}", &offset);
+            // println!("-k {}", &keyframes);
+            // println!("-F -M \"TRIM\"");
+            // println!("-p {}", &conf.PIVOT);
+            // println!("");
+
+            let com = process::Command::new("make_script\\sticom.exe")
+                .args(&[
+                    "new",
+                    // "-o", &outputFile,
+                    // "-i", &inputFile,
+                    // "-r", &frameRange,
+                    // "-p", &palette,
+                    // "--offset", &offset,
+                    // "-k", &keyframes,
+                    // "-F", "-M", "\"TRIM\"",
+                    // "-P", &conf.PIVOT
+                ])
+                .output().unwrap(); //expect("Failed to execute sticom.exe");
+            let comOutput = String::from_utf8(com.stdout).unwrap();
+            println!("{}", comOutput);
+        }
+    }
 }
+
 
 fn decision(i: usize) -> usize
 {
