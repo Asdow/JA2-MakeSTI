@@ -16,7 +16,6 @@ fn main() {
         let animationFile = &animationFileList[animationChoice];
         let animations = readAnimationDataFromFile(animationFile);
         
-        // createInputsForSTIcom();
         let props = readProps();
         
         loop {
