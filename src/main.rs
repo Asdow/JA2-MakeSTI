@@ -4,7 +4,6 @@ use std::fs;
 use std::process;
 use std::io;
 use std::io::BufRead;
-use std::io::Write;
 use ini::Ini;
 
 fn main() {
@@ -12,31 +11,32 @@ fn main() {
     conf.print();
 
     let animationFileList = readAnimationDataFilenames();
-    let animationChoice = displayAnimationChoice(&animationFileList);
-    let animationFile = &animationFileList[animationChoice];
-    let animations = readAnimationDataFromFile(animationFile);
-
-    // createInputsForSTIcom();
-    let props = readProps();
-
     loop {
-        let choice = displayPropChoice(&props);
-
-        if choice == 99
-        {
-            break
-        }
-        else if choice == 0
-        {
-            // Layered body
-        }
-        else
-        {
-            // convertOutputToExtractForProps(&animations, &props[choice-1], &conf);
-            createSTIfiles(&animations, &props[choice-1], &conf);
+        let animationChoice = displayAnimationChoice(&animationFileList);
+        let animationFile = &animationFileList[animationChoice];
+        let animations = readAnimationDataFromFile(animationFile);
+        
+        // createInputsForSTIcom();
+        let props = readProps();
+        
+        loop {
+            let choice = displayPropChoice(&props);
+            
+            if choice == 98
+            {
+                break
+            }
+            else if choice == 99
+            {
+                return
+            }
+            else
+            {
+                convertRenderOutputToBMP(&animations, &props[choice], &conf);
+                createSTIfiles(&animations, &props[choice], &conf);
+            }
         }
     }
-
 }
 
 
@@ -45,6 +45,7 @@ struct STIconfig {
     OFFSET: String,
     CROPSETTINGS: String,
     PIVOT: String,
+    DEBUG: bool
 }
 impl STIconfig {
     fn print(&self) {
@@ -52,9 +53,12 @@ impl STIconfig {
         println!("OFFSET = {}", self.OFFSET);
         println!("CROPSETTINGS = {}", self.CROPSETTINGS);
         println!("PIVOT = {}\n", self.PIVOT);
+        if self.DEBUG == true
+        {
+            println!("Debug print active");
+        }
     }
 }
-
 
 struct Animation {
     name: String,
@@ -71,29 +75,23 @@ impl Animation {
     }
 }
 
-
-struct PropFile{
+struct PropFile {
     filename: String,
     description: String,
     props: Vec<Prop>
 }
 
-struct Prop{
+struct Prop {
     palette: String,
-    number: u32,
+    prefix: String,
     suffix: String
 }
 impl Prop {
     fn print(&self) {
         println!("Palette = {}", self.palette);
-        println!("Prop number = {}", self.number.to_string());
+        println!("Prefix = {}", self.prefix);
         println!("Suffix = {}", self.suffix);
     }
-}
-
-
-struct STIinput {
-
 }
 
 
@@ -111,8 +109,16 @@ fn readConfig() -> STIconfig
     let OFFSET = section.get("OFFSET").unwrap().to_string();
     let CROPSETTINGS = section.get("CROPSETTINGS").unwrap().to_string();
     let PIVOT = section.get("PIVOT").unwrap().to_string();
+    let debugstring = section.get("DEBUG_PRINT").unwrap();
+    let DEBUG;
+    match debugstring {
+        "true" => DEBUG = true,
+        "True" => DEBUG = true,
+        "TRUE" => DEBUG = true,
+        _ => DEBUG = false
+    }
 
-    return STIconfig {OUTPUTDIR, OFFSET, CROPSETTINGS, PIVOT};
+    return STIconfig {OUTPUTDIR, OFFSET, CROPSETTINGS, PIVOT, DEBUG};
 }
 
 fn readProps() -> Vec<PropFile>
@@ -162,15 +168,15 @@ fn readPropData(filename: &String) -> Vec<Prop>
         {
             let v: Vec<&str> = lineString
                 .trim()
-                .split_terminator(',')
+                .split_terminator("::")
                 .collect()
             ;
             
             let palette = v[0].trim().to_string();
-            let number: u32 = v[1].trim().parse().unwrap();
+            let prefix = v[1].trim().to_string();
             let suffix = v[2].trim().to_string();
             
-            let prop = Prop{ palette, number, suffix};
+            let prop = Prop{ palette, prefix, suffix};
             // prop.print();
             props.push(prop);
         }
@@ -180,15 +186,14 @@ fn readPropData(filename: &String) -> Vec<Prop>
 
 fn displayPropChoice(props: &Vec<PropFile>) -> usize
 {
-    println!("Choose\n[0] for making a layered body");
-
-    let mut i = 1;
+    let mut i = 0;
     for prop in props
     {
         println!("[{}] {}", i, prop.description);
         i += 1;
     }
     i -= 1;
+    println!("[98] Choose another animation file");
     println!("[99] Quit");
 
     return decision(i);
@@ -250,7 +255,6 @@ fn readAnimationDataFromFile(filename: &String) -> Vec<Animation>
             let nDirections: u32 = v[3].parse().unwrap();
             
             let anim = Animation{ name, endFrame, stiName, nDirections };
-            // anim.print();
             println!("{}", &anim.name);
 
             animations.push(anim);
@@ -275,22 +279,24 @@ fn displayAnimationChoice(animations: &[String]) -> usize
 }
 
 
-fn convertOutputToExtractForProps(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIconfig)
+fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIconfig)
 {
     let currDir = env::current_dir().unwrap();
 
+    println!("---------------");
+    println!("Converting rendered animations");
     println!("---------------");
     for anim in animations
     {
         let folderName = &anim.name;
         let sourceDir = "output\\".to_string() + folderName;
-        println!("{}", sourceDir);
+        println!("{}", &anim.name);
 
         for prop in &propfile.props
         {
-            let nProp = prop.number;
-            let inputDir = sourceDir.clone() + "\\Prop" + &nProp.to_string() + "_C*.png";
-            let outputDir = "make_script\\extract\\".to_string() + folderName + "\\Prop" + &nProp.to_string();
+            let prefix = &prop.prefix;
+            let inputDir = sourceDir.clone() + "\\" + &prefix + "_C*.png";
+            let outputDir = "make_script\\extract\\".to_string() + folderName + "\\" + &prefix;
 
             let mut extractPath = currDir.clone();
             extractPath.push(&outputDir);
@@ -307,14 +313,26 @@ fn convertOutputToExtractForProps(animations: &Vec<Animation>, propfile: &PropFi
             if anim.nDirections == 4
             {
                 let convertArgs = [ 
-                    &(sourceDir.clone() + "\\Prop" + &nProp.to_string() + "_C2*.png"),
-                    &(sourceDir.clone() + "\\Prop" + &nProp.to_string() + "_C4*.png"),
-                    &(sourceDir.clone() + "\\Prop" + &nProp.to_string() + "_C6*.png"),
-                    &(sourceDir.clone() + "\\Prop" + &nProp.to_string() + "_C8*.png"),
+                    &(sourceDir.clone() + "\\" + &prefix + "_C2*.png"),
+                    &(sourceDir.clone() + "\\" + &prefix + "_C4*.png"),
+                    &(sourceDir.clone() + "\\" + &prefix + "_C6*.png"),
+                    &(sourceDir.clone() + "\\" + &prefix + "_C8*.png"),
                     "-crop", &conf.CROPSETTINGS, 
                     &("BMP3:".to_string() + &outputDir + "\\0.bmp") 
                 ];
 
+                if conf.DEBUG == true
+                {
+                    println!("Calling convert.exe with arguments:");
+                    for i in 0..3
+                    {
+                        println!("{}", &convertArgs[i]);
+                    }
+                    println!("{} {}", &convertArgs[4], &convertArgs[5]);
+                    println!("{}", &convertArgs[6]);
+                    println!("");
+                }
+    
                 // Crop and convert rendered images to use correct header type 
                 process::Command::new("make_script\\convert.exe")
                     .args( &convertArgs)
@@ -327,7 +345,16 @@ fn convertOutputToExtractForProps(animations: &Vec<Animation>, propfile: &PropFi
                     "-crop", &conf.CROPSETTINGS, 
                     &("BMP3:".to_string() + &outputDir + "\\0.bmp") 
                 ];
-                
+   
+                if conf.DEBUG == true
+                {
+                    println!("Calling convert.exe with arguments:");
+                    println!("{}", &convertArgs[0]);
+                    println!("{} {}", &convertArgs[1], &convertArgs[2]);
+                    println!("{}", &convertArgs[3]);
+                    println!("");
+                }
+
                 process::Command::new("make_script\\convert.exe")
                     .args( &convertArgs)
                     .output().expect("failed to execute convert.exe");
@@ -344,61 +371,67 @@ fn createSTIfiles(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIco
         for prop in &propfile.props
         {
             // Construct path to .sti file
-            let mut outputFile = "\"".to_string() + &conf.OUTPUTDIR;
+            let mut outputFile = "".to_string() + &conf.OUTPUTDIR;
             outputFile.push_str(&anim.stiName);
             outputFile.push_str(&prop.suffix);
-            outputFile.push_str(".sti\"");
+            outputFile.push_str(".sti");
+
             // Construct path to .bmp image files
-            let mut inputFile = String::from("\"make_script\\extract\\");
+            let mut inputFile = String::from("make_script\\extract\\");
             inputFile.push_str(&anim.name);
-            inputFile.push_str("\\Prop");
-            inputFile.push_str(&prop.number.to_string());
-            inputFile.push_str("\\0-%d.bmp\"");
+            inputFile.push_str("\\");
+            inputFile.push_str(&prop.prefix);
+            inputFile.push_str("\\0-%d.bmp");
             
             // Construct path to palette file
-            let mut palette = String::from("\"make_script\\Palettes\\");
+            let mut palette = String::from("make_script\\Palettes\\");
             palette.push_str(&prop.palette);
-            palette.push_str("\"");
-            // Calculate frame range and keyframes
-            let mut frameRange = String::from("\"0-"); 
-            frameRange.push_str( &(anim.endFrame * &anim.nDirections - 1).to_string());
-            frameRange.push_str("\"");
 
-            let mut keyframes = format!("\"{:#X}", &anim.endFrame);
+            // Calculate frame range and keyframes
+            let mut frameRange = String::from("0-"); 
+            frameRange.push_str( &(anim.endFrame * &anim.nDirections - 1).to_string());
+
+            let mut keyframes = format!("{:#X}", &anim.endFrame);
             for _i in 1..anim.endFrame
             {
                 keyframes.push_str(" 0x0");
             }
-            keyframes.push_str("\"");
 
-            let offset = format!("\"{}\"", &conf.OFFSET);
+            let offset = format!("{}", &conf.OFFSET);
+
             // Call sticom with the arguments and create the sti file
-            // println!("Calling sticom.exe with arguments");
-            // println!("-o {}", &outputFile);
-            // println!("-i {}", &inputFile);
-            // println!("-r {}", &frameRange);
-            // println!("-p {}", &palette);
-            // println!("-offset {}", &offset);
-            // println!("-k {}", &keyframes);
-            // println!("-F -M \"TRIM\"");
-            // println!("-p {}", &conf.PIVOT);
-            // println!("");
+            if conf.DEBUG == true
+            {
+                println!("\nCalling sticom.exe with arguments:");
+                println!("-o {}", &outputFile);
+                println!("-i {}", &inputFile);
+                println!("-r {}", &frameRange);
+                println!("-p {}", &palette);
+                println!("-offset {}", &offset);
+                println!("-k {}", &keyframes);
+                println!("-F -M TRIM");
+                println!("-p {}", &conf.PIVOT);
+                println!("");
+            }
 
             let com = process::Command::new("make_script\\sticom.exe")
                 .args(&[
                     "new",
-                    // "-o", &outputFile,
-                    // "-i", &inputFile,
-                    // "-r", &frameRange,
-                    // "-p", &palette,
-                    // "--offset", &offset,
-                    // "-k", &keyframes,
-                    // "-F", "-M", "\"TRIM\"",
-                    // "-P", &conf.PIVOT
+                    "-o", &outputFile,
+                    "-i", &inputFile,
+                    "-r", &frameRange,
+                    "-p", &palette,
+                    "--offset", &offset,
+                    "-k", &keyframes,
+                    "-F", "-M", "TRIM",
+                    "-P", &conf.PIVOT
                 ])
-                .output().unwrap(); //expect("Failed to execute sticom.exe");
-            let comOutput = String::from_utf8(com.stdout).unwrap();
-            println!("{}", comOutput);
+                .status().unwrap();
+
+            if conf.DEBUG == true
+            {
+                println!("{}", com);
+            }
         }
     }
 }
@@ -419,12 +452,14 @@ fn decision(i: usize) -> usize
             },
         };
 
-        if choice != 99 && choice > i {
-           println!("Select between 0...{}", i) ;
-           continue
-        } 
-        
-        println!("\n");
-        return choice;
+        match choice {
+            choice if choice == 99 => break choice,
+            choice if choice == 98 => break choice,
+            choice if choice > i => {
+                println!("Select between 0...{}", i);
+                continue
+            },
+            _ => break choice
+        }
     }
 }
