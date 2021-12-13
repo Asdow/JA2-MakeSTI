@@ -337,6 +337,28 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
                     .args( &convertArgs)
                     .output().expect("failed to execute convert.exe");
             }
+            else if anim.nDirections == 1
+            {
+                let convertArgs = [ 
+                    &(sourceDir.clone() + "\\" + &prefix + "_C4*.png"),
+                    "-crop", &conf.CROPSETTINGS, 
+                    &("BMP3:".to_string() + &outputDir + "\\0.bmp") 
+                ];
+
+                if conf.DEBUG == true
+                {
+                    println!("Calling convert.exe with arguments:");
+                    println!("{}", &convertArgs[0]);
+                    println!("{} {}", &convertArgs[1], &convertArgs[2]);
+                    println!("{}", &convertArgs[3]);
+                    println!("");
+                }
+    
+                // Crop and convert rendered images to use correct header type 
+                process::Command::new("make_script\\convert.exe")
+                    .args( &convertArgs)
+                    .output().expect("failed to execute convert.exe");
+            }
             else
             {
                 let convertArgs = [ 
