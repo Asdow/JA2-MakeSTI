@@ -5,6 +5,7 @@ use std::process;
 use std::io;
 use std::io::BufRead;
 use ini::Ini;
+use num_cpus;
 
 fn main() {
     let conf = readConfig();
@@ -44,7 +45,8 @@ struct STIconfig {
     OFFSET: String,
     CROPSETTINGS: String,
     PIVOT: String,
-    DEBUG: bool
+    DEBUG: bool,
+    PARALLEL: bool
 }
 impl STIconfig {
     fn print(&self) {
@@ -116,8 +118,16 @@ fn readConfig() -> STIconfig
         "TRUE" => DEBUG = true,
         _ => DEBUG = false
     }
+    let parallelstring = section.get("PARALLEL").unwrap();
+    let PARALLEL;
+    match parallelstring {
+        "true" => PARALLEL = true,
+        "True" => PARALLEL = true,
+        "TRUE" => PARALLEL = true,
+        _ => PARALLEL = false
+    }
 
-    return STIconfig {OUTPUTDIR, OFFSET, CROPSETTINGS, PIVOT, DEBUG};
+    return STIconfig {OUTPUTDIR, OFFSET, CROPSETTINGS, PIVOT, DEBUG, PARALLEL};
 }
 
 fn readProps() -> Vec<PropFile>
@@ -354,7 +364,6 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
                     println!("");
                 }
     
-                // Crop and convert rendered images to use correct header type 
                 process::Command::new("make_script\\convert.exe")
                     .args( &convertArgs)
                     .output().expect("failed to execute convert.exe");
@@ -386,7 +395,9 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
 
 fn createSTIfiles(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIconfig)
 {
-
+    let numCPU = num_cpus::get_physical() - 1;
+    let mut processes: Vec<process::Child> = Vec::new();
+    
     for anim in animations
     {
         for prop in &propfile.props
@@ -435,7 +446,9 @@ fn createSTIfiles(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIco
                 println!("");
             }
 
-            let com = process::Command::new("make_script\\sticom.exe")
+            if conf.PARALLEL
+            {
+                let com = process::Command::new("make_script\\sticom.exe")
                 .args(&[
                     "new",
                     "-o", &outputFile,
@@ -446,12 +459,52 @@ fn createSTIfiles(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIco
                     "-k", &keyframes,
                     "-F", "-M", "TRIM",
                     "-P", &conf.PIVOT
-                ])
-                .status().unwrap();
+                    ])
+                    .spawn().unwrap();
+                processes.push(com);
+                
+                if processes.len() >= numCPU
+                {
+                    let child = processes.remove(0);
+                    let output = child.wait_with_output().expect("Sticom.exe wasn't running");
+                    if conf.DEBUG == true
+                    {
+                        println!("{}", output.status);
+                    }
+                }
+            }
+            else
+            {
+                let com = process::Command::new("make_script\\sticom.exe")
+                .args(&[
+                    "new",
+                    "-o", &outputFile,
+                    "-i", &inputFile,
+                    "-r", &frameRange,
+                    "-p", &palette,
+                    "--offset", &offset,
+                    "-k", &keyframes,
+                    "-F", "-M", "TRIM",
+                    "-P", &conf.PIVOT
+                    ])
+                    .status().unwrap();
+                if conf.DEBUG == true
+                {
+                    println!("{}", com);
+                }
+            }
+        }
+    }
 
+
+    if conf.PARALLEL
+    {
+        for child in processes
+        {
+            let output = child.wait_with_output().expect("Sticom.exe wasn't running");
             if conf.DEBUG == true
             {
-                println!("{}", com);
+                println!("{}", output.status);
             }
         }
     }
