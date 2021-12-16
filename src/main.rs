@@ -291,6 +291,8 @@ fn displayAnimationChoice(animations: &[String]) -> usize
 fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, conf: &STIconfig)
 {
     let currDir = env::current_dir().unwrap();
+    let numCPU = num_cpus::get_physical() - 1;
+    let mut processes: Vec<process::Child> = Vec::new();
 
     println!("---------------");
     println!("Converting rendered animations");
@@ -333,7 +335,7 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
                 if conf.DEBUG == true
                 {
                     println!("Calling convert.exe with arguments:");
-                    for i in 0..3
+                    for i in 0..4
                     {
                         println!("{}", &convertArgs[i]);
                     }
@@ -342,10 +344,30 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
                     println!("");
                 }
     
-                // Crop and convert rendered images to use correct header type 
-                process::Command::new("make_script\\convert.exe")
-                    .args( &convertArgs)
-                    .output().expect("failed to execute convert.exe");
+                // Crop and convert rendered images to use correct header type
+                if conf.PARALLEL
+                {
+                    let com = process::Command::new("make_script\\convert.exe")
+                        .args( &convertArgs)
+                        .spawn().expect("failed to execute convert.exe");
+                    processes.push(com);
+                
+                    if processes.len() >= numCPU
+                    {
+                        let child = processes.remove(0);
+                        let output = child.wait_with_output().expect("convert.exe wasn't running");
+                        if conf.DEBUG == true
+                        {
+                            println!("{}", output.status);
+                        }
+                    }
+                    }
+                else
+                {
+                    process::Command::new("make_script\\convert.exe")
+                        .args( &convertArgs)
+                        .output().expect("failed to execute convert.exe");
+                }
             }
             else if anim.nDirections == 1
             {
@@ -364,9 +386,30 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
                     println!("");
                 }
     
-                process::Command::new("make_script\\convert.exe")
-                    .args( &convertArgs)
-                    .output().expect("failed to execute convert.exe");
+                if conf.PARALLEL
+                {
+                    let com = process::Command::new("make_script\\convert.exe")
+                        .args( &convertArgs)
+                        .spawn().expect("failed to execute convert.exe");
+
+                    processes.push(com);
+                
+                    if processes.len() >= numCPU
+                    {
+                        let child = processes.remove(0);
+                        let output = child.wait_with_output().expect("convert.exe wasn't running");
+                        if conf.DEBUG == true
+                        {
+                            println!("{}", output.status);
+                        }
+                    }
+                }
+                else
+                {
+                    process::Command::new("make_script\\convert.exe")
+                        .args( &convertArgs)
+                        .output().expect("failed to execute convert.exe");
+                }
             }
             else
             {
@@ -385,9 +428,42 @@ fn convertRenderOutputToBMP(animations: &Vec<Animation>, propfile: &PropFile, co
                     println!("");
                 }
 
-                process::Command::new("make_script\\convert.exe")
-                    .args( &convertArgs)
-                    .output().expect("failed to execute convert.exe");
+                if conf.PARALLEL
+                {
+                    let com = process::Command::new("make_script\\convert.exe")
+                        .args( &convertArgs)
+                        .spawn().expect("failed to execute convert.exe");
+
+                    processes.push(com);
+                
+                    if processes.len() >= numCPU
+                    {
+                        let child = processes.remove(0);
+                        let output = child.wait_with_output().expect("convert.exe wasn't running");
+                        if conf.DEBUG == true
+                        {
+                            println!("{}", output.status);
+                        }
+                    }
+                }
+                else
+                {
+                    process::Command::new("make_script\\convert.exe")
+                        .args( &convertArgs)
+                        .output().expect("failed to execute convert.exe");
+                }
+            }
+        }
+    }
+
+    if conf.PARALLEL
+    {
+        for child in processes
+        {
+            let output = child.wait_with_output().expect("convert.exe wasn't running");
+            if conf.DEBUG == true
+            {
+                println!("{}", output.status);
             }
         }
     }
